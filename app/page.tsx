@@ -182,6 +182,7 @@ export default function Home() {
   const [hydrated, setHydrated] = useState(false);
   const [availableMoves, setAvailableMoves] = useState<MoveOption[]>([]);
   const [diceRolling, setDiceRolling] = useState(false);
+  const [lastRoll, setLastRoll] = useState<number | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -286,6 +287,7 @@ export default function Home() {
     if (state.winner || diceRolling) return;
     const roll = randomDice();
     setDiceRolling(true);
+    setLastRoll(roll);
     const { moves, reason } = computeValidMoves(state, roll);
     setState((prev) =>
       prev
@@ -368,6 +370,7 @@ export default function Home() {
     const fresh = initialState();
     setState(fresh);
     setAvailableMoves([]);
+    setLastRoll(null);
   };
 
   const summary = (player: Player) => {
@@ -631,7 +634,7 @@ export default function Home() {
                     diceRolling ? "dice-rolling" : ""
                   }`}
                 >
-                  {diceRolling ? "" : state.dice ?? "-"}
+                  {diceRolling ? "" : state.dice ?? lastRoll ?? "-"}
                 </div>
               </div>
                 <div className="flex gap-2">
