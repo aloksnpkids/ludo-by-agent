@@ -384,7 +384,11 @@ export default function Home() {
     token: Token,
     player: Player,
     idx: number,
-    clickable: boolean
+    clickable: boolean,
+    offset = { x: 0, y: 0 },
+    stackSize = 1,
+    stackOrder = 0,
+    isCurrentTurn = false
   ) => {
     const info = tokenPhase(token.steps, player.startIndex);
     const label = token.id.split("-")[1];
@@ -392,13 +396,27 @@ export default function Home() {
       clickable &&
       availableMoves.some((m) => m.tokenId === token.id && m.nextSteps === clampSteps(m.nextSteps));
     const pulse = isReady ? "animate-pulse" : "";
-    const base = "h-9 w-9 rounded-full border-2 border-white/80 shadow-md flex items-center justify-center text-xs font-bold";
+    const base =
+      "h-9 w-9 rounded-full border-2 border-white/80 shadow-md flex items-center justify-center text-xs font-bold";
     const style = { backgroundColor: COLORS[player.color], color: "#0b1224" };
     const content = (
       <div className={`${base} ${pulse}`} style={style} key={token.id}>
         {label}
       </div>
     );
+    const hitboxPadding = stackSize > 1 ? 14 : 10;
+    const wrapperClass =
+      "absolute select-none focus:outline-none active:scale-[0.97] transition-transform touch-manipulation";
+    const buildStyle = (pos: { x: number; y: number }) => {
+      const turnBonus = isCurrentTurn ? 100 : 0;
+      return {
+        left: `${pos.x}%`,
+        top: `${pos.y}%`,
+        transform: `translate(-50%, -50%) translate(${offset.x}px, ${offset.y}px)`,
+        padding: `${hitboxPadding}px`,
+        zIndex: 50 + stackSize - stackOrder + turnBonus,
+      };
+    };
 
     if (info.phase === "home") {
       const pos = homePositions[player.color][idx % 4];
@@ -407,8 +425,8 @@ export default function Home() {
           key={token.id}
           onClick={() => applyMoveFor(token.id)}
           disabled={!isReady}
-          className="absolute"
-          style={{ left: `${pos.x}%`, top: `${pos.y}%`, transform: "translate(-50%, -50%)" }}
+          className={wrapperClass}
+          style={buildStyle(pos)}
         >
           {content}
         </button>
@@ -422,8 +440,8 @@ export default function Home() {
           key={token.id}
           onClick={() => applyMoveFor(token.id)}
           disabled={!isReady}
-          className="absolute"
-          style={{ left: `${pt.x}%`, top: `${pt.y}%`, transform: "translate(-50%, -50%)" }}
+          className={wrapperClass}
+          style={buildStyle(pt)}
         >
           {content}
         </button>
@@ -437,8 +455,8 @@ export default function Home() {
           key={token.id}
           onClick={() => applyMoveFor(token.id)}
           disabled={!isReady}
-          className="absolute"
-          style={{ left: `${lane.x}%`, top: `${lane.y}%`, transform: "translate(-50%, -50%)" }}
+          className={wrapperClass}
+          style={buildStyle(lane)}
         >
           {content}
         </button>
@@ -448,24 +466,83 @@ export default function Home() {
     return (
       <div
         key={token.id}
-        className="absolute"
-        style={{ left: "50%", top: "50%", transform: "translate(-50%, -50%)" }}
+        className={wrapperClass}
+        style={buildStyle({ x: 50, y: 50 })}
       >
         {content}
       </div>
     );
   };
 
-  const renderTokens = state.players.flatMap((player) =>
-    player.tokens.map((token, idx) =>
-      tileForToken(
-        token,
-        player,
-        idx,
-        !!state.dice && availableMoves.some((m) => m.tokenId === token.id)
-      )
-    )
-  );
+  const renderTokens = (() => {
+    const stackOffsets = (count: number) => {
+      if (count === 2) return [{ x: -12, y: -10 }, { x: 12, y: 10 }];
+      if (count === 3)
+        return [
+          { x: -14, y: -8 },
+          { x: 14, y: -8 },
+          { x: 0, y: 14 },
+        ];
+      if (count >= 4)
+        return [
+          { x: -14, y: -10 },
+          { x: 14, y: -10 },
+          { x: -14, y: 10 },
+          { x: 14, y: 10 },
+        ].concat(Array.from({ length: count - 4 }, () => ({ x: 0, y: 0 })));
+      return [{ x: 0, y: 0 }];
+    };
+
+    const placements = state.players.flatMap((player) =>
+      player.tokens.map((token, idx) => {
+        const info = tokenPhase(token.steps, player.startIndex);
+        const clickable = !!state.dice && availableMoves.some((m) => m.tokenId === token.id);
+
+        if (info.phase === "home") {
+          const pos = homePositions[player.color][idx % 4];
+          return { token, player, idx, clickable, pos, key: `home-${player.color}-${idx % 4}` };
+        }
+        if (info.phase === "track") {
+          const pt = ringPoints[info.trackIndex];
+          return { token, player, idx, clickable, pos: pt, key: `track-${info.trackIndex}` };
+        }
+        if (info.phase === "final") {
+          const lane = finalLanes[player.color][info.finalIndex];
+          return { token, player, idx, clickable, pos: lane, key: `final-${player.color}-${info.finalIndex}` };
+        }
+        return { token, player, idx, clickable, pos: { x: 50, y: 50 }, key: `done-${player.color}` };
+      })
+    );
+
+    const grouped = placements.reduce((map, item) => {
+      const list = map.get(item.key) ?? [];
+      list.push(item);
+      map.set(item.key, list);
+      return map;
+    }, new Map<string, typeof placements>());
+
+    return Array.from(grouped.values()).flatMap((group) => {
+      const offsets = stackOffsets(group.length);
+      const sortedGroup = [...group].sort((a, b) => {
+        const aTurn = a.player.color === state.currentPlayer ? 1 : 0;
+        const bTurn = b.player.color === state.currentPlayer ? 1 : 0;
+        if (aTurn !== bTurn) return bTurn - aTurn; // current turn tokens render on top
+        return 0;
+      });
+      return sortedGroup.map((item, order) =>
+        tileForToken(
+          item.token,
+          item.player,
+          item.idx,
+          item.clickable,
+          offsets[order] ?? { x: 0, y: 0 },
+          group.length,
+          order,
+          item.player.color === state.currentPlayer
+        )
+      );
+    });
+  })();
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-slate-50">
