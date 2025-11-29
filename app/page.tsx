@@ -181,6 +181,7 @@ export default function Home() {
   const [state, setState] = useState<GameState | null>(null);
   const [hydrated, setHydrated] = useState(false);
   const [availableMoves, setAvailableMoves] = useState<MoveOption[]>([]);
+  const [diceRolling, setDiceRolling] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -282,8 +283,9 @@ export default function Home() {
   const currentPlayer = findPlayer(state.players, state.currentPlayer);
 
   const handleRoll = () => {
-    if (state.winner) return;
+    if (state.winner || diceRolling) return;
     const roll = randomDice();
+    setDiceRolling(true);
     const { moves, reason } = computeValidMoves(state, roll);
     setState((prev) =>
       prev
@@ -306,6 +308,8 @@ export default function Home() {
         });
       }, 350);
     }
+
+    setTimeout(() => setDiceRolling(false), 650);
   };
 
   const applyMove = (move: MoveOption) => {
@@ -395,12 +399,13 @@ export default function Home() {
     const isReady =
       clickable &&
       availableMoves.some((m) => m.tokenId === token.id && m.nextSteps === clampSteps(m.nextSteps));
-    const pulse = isReady ? "animate-pulse" : "";
+    const pulse = isReady ? "animate-token-wobble" : "";
+    const glow = isCurrentTurn ? "shadow-[0_0_0_6px_rgba(255,255,255,0.18)] ring-2 ring-white/60" : "";
     const base =
       "h-9 w-9 rounded-full border-2 border-white/80 shadow-md flex items-center justify-center text-xs font-bold";
     const style = { backgroundColor: COLORS[player.color], color: "#0b1224" };
     const content = (
-      <div className={`${base} ${pulse}`} style={style} key={token.id}>
+      <div className={`${base} ${pulse} ${glow}`} style={style} key={token.id}>
         {label}
       </div>
     );
@@ -415,6 +420,7 @@ export default function Home() {
         transform: `translate(-50%, -50%) translate(${offset.x}px, ${offset.y}px)`,
         padding: `${hitboxPadding}px`,
         zIndex: 50 + stackSize - stackOrder + turnBonus,
+        transition: "left 0.45s ease, top 0.45s ease, transform 0.45s ease",
       };
     };
 
@@ -496,7 +502,10 @@ export default function Home() {
     const placements = state.players.flatMap((player) =>
       player.tokens.map((token, idx) => {
         const info = tokenPhase(token.steps, player.startIndex);
-        const clickable = !!state.dice && availableMoves.some((m) => m.tokenId === token.id);
+        const clickable =
+          !!state.dice &&
+          availableMoves.some((m) => m.tokenId === token.id) &&
+          !diceRolling;
 
         if (info.phase === "home") {
           const pos = homePositions[player.color][idx % 4];
@@ -615,16 +624,20 @@ export default function Home() {
           <aside className="flex flex-col gap-4 rounded-3xl border border-white/10 bg-white/5 p-4 shadow-2xl backdrop-blur">
             <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-4">
               <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs text-slate-400">Dice</p>
-                  <p className="text-4xl font-black tracking-tight">
-                    {state.dice ?? "-"}
-                  </p>
+              <div>
+                <p className="text-xs text-slate-400">Dice</p>
+                <div
+                  className={`flex h-12 w-12 items-center justify-center rounded-lg border border-white/15 bg-white/5 text-2xl font-black tracking-tight ${
+                    diceRolling ? "dice-rolling" : ""
+                  }`}
+                >
+                  {diceRolling ? "" : state.dice ?? "-"}
                 </div>
+              </div>
                 <div className="flex gap-2">
                   <button
                     onClick={handleRoll}
-                    disabled={!!state.dice || !!state.winner}
+                    disabled={!!state.dice || !!state.winner || diceRolling}
                     className="rounded-xl bg-white text-slate-900 px-4 py-2 text-sm font-semibold shadow-lg shadow-blue-500/30 transition hover:scale-[1.02] disabled:opacity-50"
                   >
                     Roll
